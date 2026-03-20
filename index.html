@@ -1,1 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hex Strategy Game</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #f4f3ef;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      font-family: Georgia, 'Times New Roman', serif;
+      padding: 1rem 0.5rem 2rem;
+      color: #2c2c2a;
+    }
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 400;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #444;
+      margin-bottom: 0.5rem;
+    }
+    #wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      max-width: 680px;
+    }
+    #board-svg { width: 100%; max-width: 640px; }
+
+    /* Hex cell backgrounds */
+    .hex-bg { stroke: #aaa; stroke-width: 0.75; transition: fill 0.1s, stroke 0.1s; }
+    .hex-shade-0 { fill: #ffffff; }
+    .hex-shade-1 { fill: #cccccc; }
+    .hex-shade-2 { fill: #888888; }
+    .hex-cell { cursor: pointer; }
+    .hex-cell:hover .hex-bg { fill: #B5D4F4 !important; stroke: #378ADD; }
+    .hex-cell.active .hex-bg { fill: #85B7EB !important; stroke: #1a5fa8; stroke-width: 1.8; }
+    .hex-cell.moveable .hex-bg { fill: #DCF0FF !important; stroke: #378ADD; stroke-width: 1; }
+    .hex-cell.retreat .hex-bg { fill: #D4EDBA !important; stroke: #5a9a10; stroke-width: 1; }
+    .hex-cell.fireable .hex-bg { fill: #FFD5D5 !important; stroke: #CC3333; stroke-width: 1; }
+    .hex-cell.threatened .hex-bg { fill: #FFE8B0 !important; stroke: #c47a00; stroke-width: 1; }
+    .hex-cell.in-check .hex-bg { fill: #FFB0B0 !important; stroke: #CC0000; stroke-width: 2; }
+
+    /* Turn bar */
+    #turn-bar {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 8px;
+      width: 100%;
+    }
+    .turn-indicator {
+      display: flex; align-items: center; gap: 7px;
+      padding: 5px 16px;
+      border-radius: 20px;
+      border: 1px solid #ccc;
+      font-size: 12px;
+      letter-spacing: 0.05em;
+      color: #666;
+      transition: all 0.2s;
+      background: #fff;
+    }
+    .turn-indicator.active-p1 { background: #EEF2FB; border-color: #2A5298; color: #2A5298; font-weight: 600; }
+    .turn-indicator.active-p2 { background: #FBEAEA; border-color: #8B2020; color: #8B2020; font-weight: 600; }
+    .turn-indicator.in-check-ind { border-color: #CC0000 !important; background: #FFE0E0 !important; color: #CC0000 !important; }
+    .turn-dot { width: 9px; height: 9px; border-radius: 50%; }
+    .dot-p1 { background: #2A5298; }
+    .dot-p2 { background: #8B2020; }
+
+    /* Info bar */
+    #info-bar {
+      display: flex; align-items: center; gap: 10px;
+      margin-top: 8px; font-size: 11px;
+      color: #666; flex-wrap: wrap; justify-content: center;
+      font-family: Georgia, serif;
+    }
+    .legend-row { display: flex; align-items: center; gap: 4px; }
+
+    #status {
+      font-size: 12px; color: #888;
+      margin-top: 5px; min-height: 18px;
+      text-align: center; letter-spacing: 0.03em;
+    }
+    #capture-log {
+      font-size: 11px; color: #c47a00;
+      margin-top: 3px; min-height: 15px;
+      text-align: center;
+    }
+    #game-over-banner {
+      display: none;
+      margin-top: 10px;
+      padding: 12px 32px;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      text-align: center;
+    }
+    #game-over-banner.p1-wins { background: #EEF2FB; color: #2A5298; border: 1.5px solid #2A5298; }
+    #game-over-banner.p2-wins { background: #FBEAEA; color: #8B2020; border: 1.5px solid #8B2020; }
+
+    button {
+      font-size: 11px;
+      font-family: Georgia, serif;
+      padding: 4px 12px;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      color: #555;
+      transition: background 0.15s;
+    }
+    button:hover { background: #f0f0f0; }
+
+    #skip-btn { display: none; color: #888; }
+
+    .zone-label { font-size: 10px; fill: #aaa; pointer-events: none; font-family: Georgia, serif; letter-spacing: 0.08em; }
+  </style>
+</head>
+<body>
+
+<h1>Hex &mdash; Strategy Game</h1>
+
+<div id="wrap">
+  <div id="turn-bar">
+    <div class="turn-indicator active-p1" id="ind-p1"><span class="turn-dot dot-p1"></span>player 1</div>
+    <div class="turn-indicator" id="ind-p2"><span class="turn-dot dot-p2"></span>player 2</div>
+    <button id="reset-btn">new game</button>
+  </div>
+
+  <svg id="board-svg" viewBox="0 0 640 600"></svg>
+
+  <div id="info-bar">
+    <span style="color:#333;font-weight:600">pieces:</span>
+    <span class="legend-row">
+      <svg width="16" height="14" viewBox="-8 -7 16 14">
+        <polyline points="-6,5 0,-5 6,5" fill="none" stroke="#2A5298" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg> shield
+    </span>
+    <span class="legend-row">
+      <svg width="16" height="16" viewBox="-8 -8 16 16">
+        <polygon points="0,-7 3.5,-2 6.06,-3.5 3.5,0 6.06,3.5 3.5,2 0,7 -3.5,2 -6.06,3.5 -3.5,0 -6.06,-3.5 -3.5,-2" fill="#2A5298" stroke="#1a3a75" stroke-width="0.5"/>
+        <polygon points="0,-3.5 3.03,1.75 -3.03,1.75" fill="white"/>
+        <polygon points="0,3.5 3.03,-1.75 -3.03,-1.75" fill="white"/>
+      </svg> ballista
+    </span>
+    <span class="legend-row">
+      <svg width="16" height="16" viewBox="0 0 16 16"><text x="8" y="13" text-anchor="middle" font-size="14" font-family="serif" fill="#2A5298">♞</text></svg> knight
+    </span>
+    <span class="legend-row">
+      <svg width="16" height="16" viewBox="0 0 16 16"><text x="8" y="13" text-anchor="middle" font-size="14" font-family="serif" fill="#2A5298">♛</text></svg> queen
+    </span>
+    <span class="legend-row">
+      <svg width="16" height="16" viewBox="0 0 16 16"><text x="8" y="13" text-anchor="middle" font-size="14" font-family="serif" fill="#2A5298">♚</text></svg> king
+    </span>
+    <span style="margin-left:6px" class="legend-row"><span style="display:inline-block;width:11px;height:11px;background:#DCF0FF;border:1px solid #378ADD;border-radius:2px;vertical-align:middle"></span> move</span>
+    <span class="legend-row"><span style="display:inline-block;width:11px;height:11px;background:#D4EDBA;border:1px solid #5a9a10;border-radius:2px;vertical-align:middle"></span> retreat</span>
+    <span class="legend-row"><span style="display:inline-block;width:11px;height:11px;background:#FFD5D5;border:1px solid #CC3333;border-radius:2px;vertical-align:middle"></span> fire</span>
+    <span class="legend-row"><span style="display:inline-block;width:11px;height:11px;background:#FFE8B0;border:1px solid #c47a00;border-radius:2px;vertical-align:middle"></span> shield threat</span>
+    <span class="legend-row"><span style="display:inline-block;width:11px;height:11px;background:#FFB0B0;border:1px solid #CC0000;border-radius:2px;vertical-align:middle"></span> check</span>
+  </div>
+
+  <div id="status">player 1's turn — select a piece</div>
+  <div id="capture-log"></div>
+  <button id="skip-btn">no legal moves — click to pass turn</button>
+  <div id="game-over-banner"></div>
+</div>
+
+<script>
+(function(){
+  const svg = document.getElementById('board-svg');
+  const statusEl = document.getElementById('status');
+  const captureLog = document.getElementById('capture-log');
+  const indP1 = document.getElementById('ind-p1');
+  const indP2 = document.getElementById('ind-p2');
+  const skipBtn = document.getElementById('skip-btn');
+  const gameOverBanner = document.getElementById('game-over-banner');
+  const N=5, R=29, W=640, H=600;
+  let currentPlayer=1, gameOver=false;
+
+  const P_COLOR  = {1:'#2A5298', 2:'#8B2020'};
+  const P_STROKE = {1:'#1a3a75', 2:'#5c1111'};
+
+  function hexShade(q,r){ return ((q-r)%3+3)%3; }
+
+  function corners(cx,cy,rad){
+    let pts=[];
+    for(let i=0;i<6;i++){
+      const a=Math.PI/3*i-Math.PI/6;
+      pts.push((cx+rad*Math.cos(a)).toFixed(2)+','+(cy+rad*Math.sin(a)).toFixed(2));
+    }
+    return pts.join(' ');
+  }
+  function axialToPixel(q,r){ return [R*Math.sqrt(3)*(q+r/2), R*1.5*r]; }
+
+  const cells=[];
+  for(let q=-N;q<=N;q++)
+    for(let r=-N;r<=N;r++)
+      if(Math.abs(q+r)<=N) cells.push({q,r});
+
+  const pxs=cells.map(c=>axialToPixel(c.q,c.r));
+  const xs=pxs.map(p=>p[0]), ys=pxs.map(p=>p[1]);
+  const offX=W/2-(Math.min(...xs)+Math.max(...xs))/2;
+  const offY=H/2-(Math.min(...ys)+Math.max(...ys))/2;
+
+  const DIRS6=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
+  const SHIELD_FWD    ={1:[[0,-1],[1,-1]], 2:[[0,1],[-1,1]]};
+  const KNIGHT_RETREAT={1:[[0,1],[-1,1]],  2:[[0,-1],[1,-1]]};
+
+  function shieldForwardHexes(q,r,player){
+    return SHIELD_FWD[player].map(([dq,dr])=>`${q+dq},${r+dr}`).filter(k=>cellMap[k]);
+  }
+  function shieldIsProtectedFrom(dq,dr,sp){
+    return SHIELD_FWD[sp].some(([fdq,fdr])=>fdq===-dq&&fdr===-dr);
+  }
+  function slideTargetsOnState(q,r,player,sm,ignore){
+    const moves=[],targets=[];
+    DIRS6.forEach(([dq,dr])=>{
+      let cq=q+dq,cr=r+dr;
+      while(sm[`${cq},${cr}`]!==undefined){
+        const k=`${cq},${cr}`;
+        const piece=k===ignore?null:sm[k];
+        if(piece){
+          if(piece.player===player)break;
+          if(piece.type==='shield'){if(!shieldIsProtectedFrom(dq,dr,piece.player))targets.push(k);break;}
+          targets.push(k);break;
+        }
+        moves.push(k);cq+=dq;cr+=dr;
+      }
+    });
+    return{moves,targets};
+  }
+  function getKnightLandings(q,r){
+    const res=new Set();
+    DIRS6.forEach(([dq1,dr1],i)=>{
+      [DIRS6[(i+1)%6],DIRS6[(i+5)%6]].forEach(([dq2,dr2])=>{
+        const k=`${q+dq1+dq2},${r+dr1+dr2}`;
+        if(cellMap[k])res.add(k);
+      });
+    });
+    return[...res];
+  }
+  function getKnightRetreatHexes(q,r,player,sm){
+    return KNIGHT_RETREAT[player].map(([dq,dr])=>`${q+dq},${r+dr}`).filter(k=>cellMap[k]&&!sm[k]);
+  }
+  function snapshotState(){
+    const s={};
+    Object.entries(cellMap).forEach(([k,c])=>{s[k]=c.piece?{player:c.piece.player,type:c.piece.type}:null;});
+    return s;
+  }
+  function applyShieldCapturesOnState(sm){
+    const tc={1:{},2:{}};
+    Object.entries(sm).forEach(([k,piece])=>{
+      if(!piece||piece.type!=='shield')return;
+      const cell=cellMap[k];
+      SHIELD_FWD[piece.player].map(([dq,dr])=>`${cell.q+dq},${cell.r+dr}`)
+        .filter(fk=>cellMap[fk]).forEach(fk=>{tc[piece.player][fk]=(tc[piece.player][fk]||0)+1;});
+    });
+    [1,2].forEach(a=>{
+      const d=a===1?2:1;
+      Object.entries(tc[a]).forEach(([k,count])=>{
+        if(count>=2&&sm[k]&&sm[k].player===d&&sm[k].type!=='shield')sm[k]=null;
+      });
+    });
+  }
+  function simulateMove(sm,fromKey,toKey,isFire){
+    const next={...sm};
+    if(isFire){next[toKey]=null;}else{next[toKey]=next[fromKey];next[fromKey]=null;}
+    applyShieldCapturesOnState(next);return next;
+  }
+  function buildThreatMapOnState(byPlayer,sm,ignore){
+    const threatened=new Set(),sc={};
+    Object.entries(sm).forEach(([k,piece])=>{
+      if(!piece||piece.player!==byPlayer)return;
+      const{q,r}=cellMap[k],type=piece.type;
+      if(type==='shield'){
+        SHIELD_FWD[byPlayer].map(([dq,dr])=>`${q+dq},${r+dr}`).filter(fk=>cellMap[fk])
+          .forEach(fk=>{sc[fk]=(sc[fk]||0)+1;});
+      }
+      if(type==='knight')getKnightLandings(q,r).forEach(lk=>threatened.add(lk));
+      if(type==='queen'||type==='ballista'){
+        const{moves,targets}=slideTargetsOnState(q,r,byPlayer,sm,ignore);
+        [...moves,...targets].forEach(lk=>threatened.add(lk));
+      }
+      if(type==='king')DIRS6.map(([dq,dr])=>`${q+dq},${r+dr}`).filter(lk=>cellMap[lk]).forEach(lk=>threatened.add(lk));
+    });
+    Object.entries(sc).forEach(([k,count])=>{if(count>=2)threatened.add(k);});
+    return threatened;
+  }
+  function isKingInCheckOnState(player,sm){
+    const kk=Object.entries(sm).find(([,p])=>p&&p.player===player&&p.type==='king')?.[0];
+    if(!kk)return false;
+    return buildThreatMapOnState(player===1?2:1,sm,null).has(kk);
+  }
+  function getLegalActions(key){
+    const c=cellMap[key];
+    if(!c.piece)return{moves:[],retreats:[],targets:[],isBallista:false};
+    const{q,r,piece:{player,type}}=c;
+    const sm=snapshotState();
+    let rawMoves=[],rawRetreats=[],rawTargets=[],isBallista=false;
+    if(type==='shield'){
+      rawMoves=SHIELD_FWD[player].map(([dq,dr])=>`${q+dq},${r+dr}`).filter(k=>cellMap[k]&&!sm[k]);
+    }else if(type==='ballista'){
+      const{moves,targets}=slideTargetsOnState(q,r,player,sm,null);
+      rawMoves=moves;rawTargets=targets;isBallista=true;
+    }else if(type==='knight'){
+      const all=getKnightLandings(q,r).filter(k=>!sm[k]||sm[k].player!==player);
+      rawMoves=all.filter(k=>!sm[k]);rawTargets=all.filter(k=>sm[k]);
+      rawRetreats=getKnightRetreatHexes(q,r,player,sm);
+    }else if(type==='queen'){
+      const{moves,targets}=slideTargetsOnState(q,r,player,sm,null);
+      rawMoves=moves;rawTargets=targets;
+    }else if(type==='king'){
+      const tm=buildThreatMapOnState(player===1?2:1,sm,key);
+      const adj=DIRS6.map(([dq,dr])=>`${q+dq},${r+dr}`).filter(k=>cellMap[k]&&!tm.has(k));
+      rawMoves=adj.filter(k=>!sm[k]);
+      rawTargets=adj.filter(k=>sm[k]&&sm[k].player!==player);
+    }
+    const safe=arr=>arr.filter(tk=>!isKingInCheckOnState(player,simulateMove(sm,key,tk,false)));
+    const safeFire=arr=>arr.filter(tk=>!isKingInCheckOnState(player,simulateMove(sm,key,tk,true)));
+    return{moves:safe(rawMoves),retreats:safe(rawRetreats),targets:isBallista?safeFire(rawTargets):safe(rawTargets),isBallista};
+  }
+  function hasAnyLegalAction(player){
+    return Object.values(cellMap).some(c=>{
+      if(!c.piece||c.piece.player!==player)return false;
+      const{moves,retreats,targets}=getLegalActions(`${c.q},${c.r}`);
+      return moves.length>0||retreats.length>0||targets.length>0;
+    });
+  }
+  function findKing(player){
+    return Object.entries(cellMap).find(([,c])=>c.piece&&c.piece.player===player&&c.piece.type==='king')?.[0];
+  }
+  function computeShieldThreatsLive(){
+    const tc={1:{},2:{}};
+    Object.values(cellMap).forEach(c=>{
+      if(!c.piece||c.piece.type!=='shield')return;
+      shieldForwardHexes(c.q,c.r,c.piece.player).forEach(tk=>{tc[c.piece.player][tk]=(tc[c.piece.player][tk]||0)+1;});
+    });
+    const threatened={1:new Set(),2:new Set()};
+    [1,2].forEach(p=>{Object.entries(tc[p]).forEach(([k,count])=>{if(count>=2)threatened[p].add(k);});});
+    return threatened;
+  }
+  function checkShieldCaptures(){
+    const threatened=computeShieldThreatsLive();
+    const captured=[];
+    [1,2].forEach(attacker=>{
+      const defender=attacker===1?2:1;
+      threatened[attacker].forEach(k=>{
+        const c=cellMap[k];
+        if(c.piece&&c.piece.player===defender&&c.piece.type!=='shield'){
+          captured.push(`player ${attacker} shields captured player ${defender}'s ${c.piece.type}`);
+          c.piece.shapeEl.remove();c.piece=null;
+        }
+      });
+    });
+    return captured;
+  }
+  function updateThreatHighlights(){
+    const threatened=computeShieldThreatsLive();
+    const all=new Set([...threatened[1],...threatened[2]]);
+    Object.entries(cellMap).forEach(([k,c])=>{all.has(k)?c.el.classList.add('threatened'):c.el.classList.remove('threatened');});
+  }
+  function updateCheckHighlight(player){
+    Object.values(cellMap).forEach(c=>c.el.classList.remove('in-check'));
+    const kk=findKing(player);if(!kk)return false;
+    const inCheck=buildThreatMapOnState(player===1?2:1,snapshotState(),null).has(kk);
+    if(inCheck)cellMap[kk].el.classList.add('in-check');
+    return inCheck;
+  }
+  function updateTurnUI(inCheck){
+    indP1.className='turn-indicator'+(currentPlayer===1?' active-p1':'')+(currentPlayer===1&&inCheck?' in-check-ind':'');
+    indP2.className='turn-indicator'+(currentPlayer===2?' active-p2':'')+(currentPlayer===2&&inCheck?' in-check-ind':'');
+  }
+  function endTurn(){
+    currentPlayer=currentPlayer===1?2:1;
+    clearHighlights();
+    selected=null;selectedMoves=[];selectedRetreats=[];selectedTargets=[];selectedIsBallista=false;
+    const inCheck=updateCheckHighlight(currentPlayer);
+    if(inCheck&&!hasAnyLegalAction(currentPlayer)){
+      const winner=currentPlayer===1?2:1;gameOver=true;
+      gameOverBanner.textContent=`checkmate \u2014 player ${winner} wins!`;
+      gameOverBanner.className=`p${winner}-wins`;gameOverBanner.style.display='block';
+      statusEl.textContent=`player ${currentPlayer}'s king is in checkmate`;
+      updateTurnUI(true);return;
+    }
+    updateTurnUI(inCheck);
+    if(!hasAnyLegalAction(currentPlayer)){
+      skipBtn.style.display='inline';
+      statusEl.textContent=`player ${currentPlayer} has no legal moves \u2014 turn passes`;
+    }else{
+      skipBtn.style.display='none';
+      statusEl.textContent=inCheck?`player ${currentPlayer} is in check \u2014 must resolve`:`player ${currentPlayer}'s turn \u2014 select a piece`;
+    }
+  }
+  function afterMove(){
+    const caps=checkShieldCaptures();
+    updateThreatHighlights();
+    if(caps.length>0){captureLog.textContent=caps.join(' \u00b7 ');setTimeout(()=>{captureLog.textContent='';},3000);}
+    endTurn();
+  }
+  skipBtn.addEventListener('click',()=>{skipBtn.style.display='none';endTurn();});
+
+  // --- Piece drawing ---
+
+  function drawSixPointedStar(player,cx,cy,triColor,hexColor){
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    const sc=P_STROKE[player],Ro=10.5,Ri=Ro/Math.sqrt(3);
+    function pt(angleDeg,r){
+      const a=angleDeg*Math.PI/180;
+      return[(cx+r*Math.cos(a)).toFixed(3),(cy+r*Math.sin(a)).toFixed(3)];
+    }
+    const tA=[300,60,180].map(a=>pt(a,Ro).join(',')).join(' ');
+    const tB=[120,240,0].map(a=>pt(a,Ro).join(',')).join(' ');
+    const hexPts=[30,90,150,210,270,330].map(a=>pt(a,Ri).join(',')).join(' ');
+    const tri1=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    tri1.setAttribute('points',tA);tri1.setAttribute('fill',triColor);
+    tri1.setAttribute('stroke',sc);tri1.setAttribute('stroke-width','0.75');tri1.setAttribute('stroke-linejoin','round');
+    const tri2=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    tri2.setAttribute('points',tB);tri2.setAttribute('fill',triColor);
+    tri2.setAttribute('stroke',sc);tri2.setAttribute('stroke-width','0.75');tri2.setAttribute('stroke-linejoin','round');
+    const hex=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    hex.setAttribute('points',hexPts);hex.setAttribute('fill',hexColor);
+    hex.setAttribute('stroke',sc);hex.setAttribute('stroke-width','0.5');
+    g.appendChild(tri1);g.appendChild(tri2);g.appendChild(hex);
+    return g;
+  }
+
+  function drawChevron(player,cx,cy){
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    const color=P_COLOR[player];
+    const armLen=10,halfAngle=60*Math.PI/180;
+    const tipAngle=player===1?-Math.PI/2:Math.PI/2;
+    const tx=cx,ty=player===1?cy-6:cy+6;
+    const baseAngle=tipAngle+Math.PI;
+    const a1=baseAngle-halfAngle,a2=baseAngle+halfAngle;
+    const x1=(tx+armLen*Math.cos(a1)).toFixed(2),y1=(ty+armLen*Math.sin(a1)).toFixed(2);
+    const x2=(tx+armLen*Math.cos(a2)).toFixed(2),y2=(ty+armLen*Math.sin(a2)).toFixed(2);
+    const path=document.createElementNS('http://www.w3.org/2000/svg','polyline');
+    path.setAttribute('points',`${x1},${y1} ${tx.toFixed(2)},${ty.toFixed(2)} ${x2},${y2}`);
+    path.setAttribute('fill','none');path.setAttribute('stroke',color);
+    path.setAttribute('stroke-width','3.5');path.setAttribute('stroke-linecap','round');path.setAttribute('stroke-linejoin','round');
+    g.appendChild(path);
+    return g;
+  }
+
+  function drawChessGlyph(glyph,player,cx,cy){
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    const color=P_COLOR[player],sc=P_STROKE[player];
+    const outline=document.createElementNS('http://www.w3.org/2000/svg','text');
+    outline.setAttribute('x',String(cx));outline.setAttribute('y',String(cy+8));
+    outline.setAttribute('text-anchor','middle');outline.setAttribute('font-size','22');
+    outline.setAttribute('font-family','serif');outline.setAttribute('fill','none');
+    outline.setAttribute('stroke',sc);outline.setAttribute('stroke-width','2.5');outline.setAttribute('stroke-linejoin','round');
+    outline.textContent=glyph;
+    const fill=document.createElementNS('http://www.w3.org/2000/svg','text');
+    fill.setAttribute('x',String(cx));fill.setAttribute('y',String(cy+8));
+    fill.setAttribute('text-anchor','middle');fill.setAttribute('font-size','22');
+    fill.setAttribute('font-family','serif');fill.setAttribute('fill',color);
+    fill.textContent=glyph;
+    g.appendChild(outline);g.appendChild(fill);
+    return g;
+  }
+
+  function drawPiece(type,player,cx,cy){
+    const color=P_COLOR[player];
+    if(type==='shield')  return drawChevron(player,cx,cy);
+    if(type==='ballista') return drawSixPointedStar(player,cx,cy,color,'white');
+    if(type==='knight')  return drawChessGlyph('\u265e',player,cx,cy);
+    if(type==='queen')   return drawChessGlyph('\u265b',player,cx,cy);
+    if(type==='king')    return drawChessGlyph('\u265a',player,cx,cy);
+    return document.createElementNS('http://www.w3.org/2000/svg','g');
+  }
+
+  // --- Board setup ---
+
+  const cellMap={};
+  cells.forEach(c=>{cellMap[`${c.q},${c.r}`]={q:c.q,r:c.r,el:null,cx:0,cy:0,piece:null};});
+  const cellGroup=document.createElementNS('http://www.w3.org/2000/svg','g');
+  svg.appendChild(cellGroup);
+
+  cells.forEach(c=>{
+    const[px,py]=axialToPixel(c.q,c.r);
+    const cx=px+offX,cy=py+offY,key=`${c.q},${c.r}`;
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class','hex-cell');
+    const shade=hexShade(c.q,c.r);
+    const poly=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+    poly.setAttribute('class',`hex-bg hex-shade-${shade}`);
+    poly.setAttribute('points',corners(cx,cy,R-1.2));
+    g.appendChild(poly);
+    cellMap[key].el=g;cellMap[key].cx=cx;cellMap[key].cy=cy;
+    g.addEventListener('click',()=>onCellClick(key));
+    cellGroup.appendChild(g);
+  });
+
+  function addLabel(text,x,y){
+    const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+    t.setAttribute('x',x);t.setAttribute('y',y);t.setAttribute('text-anchor','middle');
+    t.setAttribute('class','zone-label');t.textContent=text;svg.appendChild(t);
+  }
+  addLabel('player 2',W/2,20); addLabel('player 1',W/2,594);
+
+  const SETUP_P1=[
+    {q:-5,r:5,type:'ballista'},{q:-4,r:5,type:'knight'},{q:-3,r:5,type:'king'},
+    {q:-2,r:5,type:'queen'},{q:-1,r:5,type:'knight'},{q:0,r:5,type:'ballista'},
+    {q:-5,r:4,type:'shield'},{q:-4,r:4,type:'shield'},{q:-3,r:4,type:'shield'},
+    {q:-2,r:4,type:'shield'},{q:-1,r:4,type:'shield'},{q:0,r:4,type:'shield'},{q:1,r:4,type:'shield'},
+  ];
+  const SETUP_P2=[
+    {q:5,r:-5,type:'ballista'},{q:4,r:-5,type:'knight'},{q:3,r:-5,type:'king'},
+    {q:2,r:-5,type:'queen'},{q:1,r:-5,type:'knight'},{q:0,r:-5,type:'ballista'},
+    {q:5,r:-4,type:'shield'},{q:4,r:-4,type:'shield'},{q:3,r:-4,type:'shield'},
+    {q:2,r:-4,type:'shield'},{q:1,r:-4,type:'shield'},{q:0,r:-4,type:'shield'},{q:-1,r:-4,type:'shield'},
+  ];
+
+  function placePiece(q,r,player,type){
+    const key=`${q},${r}`;if(!cellMap[key])return;
+    const{cx,cy,el}=cellMap[key];
+    const shapeEl=drawPiece(type,player,cx,cy);
+    el.appendChild(shapeEl);cellMap[key].piece={player,type,shapeEl};
+  }
+  function initPieces(){
+    SETUP_P1.forEach(p=>placePiece(p.q,p.r,1,p.type));
+    SETUP_P2.forEach(p=>placePiece(p.q,p.r,2,p.type));
+    updateThreatHighlights();updateCheckHighlight(currentPlayer);
+  }
+
+  let selected=null,selectedMoves=[],selectedRetreats=[],selectedTargets=[],selectedIsBallista=false;
+
+  function clearHighlights(){
+    Object.values(cellMap).forEach(c=>c.el.classList.remove('active','moveable','retreat','fireable'));
+  }
+  function selectPiece(key){
+    if(gameOver)return;
+    const cell=cellMap[key];
+    if(cell.piece.player!==currentPlayer){statusEl.textContent=`it's player ${currentPlayer}'s turn`;return;}
+    const{moves,retreats,targets,isBallista}=getLegalActions(key);
+    selected=key;selectedMoves=moves;selectedRetreats=retreats;selectedTargets=targets;selectedIsBallista=isBallista;
+    cell.el.classList.add('active');
+    moves.forEach(k=>cellMap[k].el.classList.add('moveable'));
+    retreats.forEach(k=>cellMap[k].el.classList.add('retreat'));
+    targets.forEach(k=>cellMap[k].el.classList.add(isBallista?'fireable':'moveable'));
+    const total=moves.length+retreats.length+targets.length;
+    const rLabel=retreats.length>0?`, ${retreats.length} retreat${retreats.length!==1?'s':''}`:'';
+    statusEl.textContent=isBallista
+      ?`ballista \u2014 ${moves.length} move${moves.length!==1?'s':''}, ${targets.length} fire target${targets.length!==1?'s':''}`
+      :`${cell.piece.type} \u2014 ${total} action${total!==1?'s':''}${rLabel}`;
+  }
+  function onCellClick(key){
+    if(gameOver)return;
+    const cell=cellMap[key];
+    if(selected){
+      if(key===selected){
+        clearHighlights();selected=null;
+        const inCheck=isKingInCheckOnState(currentPlayer,snapshotState());
+        statusEl.textContent=inCheck?`player ${currentPlayer} is in check \u2014 must resolve`:`player ${currentPlayer}'s turn \u2014 select a piece`;
+        return;
+      }
+      const fromCell=cellMap[selected];
+      if(selectedIsBallista&&selectedTargets.includes(key)){
+        const captured=cell.piece.type;cell.piece.shapeEl.remove();cell.piece=null;
+        captureLog.textContent=`ballista captured ${captured} at (${cell.q},${cell.r})`;
+        setTimeout(()=>{captureLog.textContent='';},3000);
+        clearHighlights();afterMove();return;
+      }
+      if(selectedMoves.includes(key)||selectedRetreats.includes(key)){
+        const{player,type}=fromCell.piece;
+        fromCell.piece.shapeEl.remove();fromCell.piece=null;
+        const ns=drawPiece(type,player,cell.cx,cell.cy);
+        cell.el.appendChild(ns);cell.piece={player,type,shapeEl:ns};
+        clearHighlights();afterMove();return;
+      }
+      if(!selectedIsBallista&&selectedTargets.includes(key)){
+        const{player,type}=fromCell.piece;
+        const captured=cell.piece.type;
+        cell.piece.shapeEl.remove();cell.piece=null;
+        fromCell.piece.shapeEl.remove();fromCell.piece=null;
+        const ns=drawPiece(type,player,cell.cx,cell.cy);
+        cell.el.appendChild(ns);cell.piece={player,type,shapeEl:ns};
+        captureLog.textContent=`${type} captured ${captured} at (${cell.q},${cell.r})`;
+        setTimeout(()=>{captureLog.textContent='';},3000);
+        clearHighlights();afterMove();return;
+      }
+      if(cell.piece&&cell.piece.player===currentPlayer){clearHighlights();selectPiece(key);return;}
+      statusEl.textContent='invalid \u2014 select a piece or valid destination';
+    }else{
+      if(cell.piece)selectPiece(key);
+    }
+  }
+
+  initPieces();
+
+  document.getElementById('reset-btn').addEventListener('click',()=>{
+    clearHighlights();selected=null;selectedMoves=[];selectedRetreats=[];selectedTargets=[];selectedIsBallista=false;
+    currentPlayer=1;gameOver=false;
+    gameOverBanner.style.display='none';gameOverBanner.className='';
+    skipBtn.style.display='none';
+    Object.values(cellMap).forEach(c=>{c.el.classList.remove('in-check');if(c.piece){c.piece.shapeEl.remove();c.piece=null;}});
+    captureLog.textContent='';
+    indP1.className='turn-indicator active-p1';indP2.className='turn-indicator';
+    initPieces();statusEl.textContent=`player 1's turn \u2014 select a piece`;
+  });
+})();
+</script>
+</body>
+</html>
+
 
