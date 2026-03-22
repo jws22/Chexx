@@ -60,6 +60,109 @@
     button:hover { background: #f0f0f0; }
     #skip-btn { display: none; color: #888; }
     .zone-label { font-size: 10px; fill: #aaa; pointer-events: none; font-family: Georgia, serif; letter-spacing: 0.08em; }
+
+    /* Game Mode Selection Dialog Styles */
+    .game-mode-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .game-mode-overlay.hidden {
+      display: none;
+    }
+    .game-mode-dialog {
+      background: #f4f3ef;
+      border-radius: 12px;
+      padding: 32px;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      text-align: center;
+      font-family: Georgia, 'Times New Roman', serif;
+    }
+    .game-mode-dialog h2 {
+      font-size: 24px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 12px;
+      letter-spacing: 0.05em;
+    }
+    .game-mode-dialog p {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 24px;
+    }
+    .mode-options {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .mode-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 20px;
+      border: 2px solid #ccc;
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: Georgia, serif;
+      font-size: 16px;
+      font-weight: 500;
+      color: #333;
+    }
+    .mode-btn:hover {
+      border-color: #378ADD;
+      background: #f9fafb;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(55, 138, 221, 0.2);
+    }
+    .mode-btn:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 6px rgba(55, 138, 221, 0.15);
+    }
+    .mode-btn.selected {
+      border-color: #2A5298;
+      background: #EEF2FB;
+      box-shadow: 0 4px 12px rgba(42, 82, 152, 0.3);
+    }
+    .mode-icon {
+      font-size: 40px;
+    }
+    .mode-label {
+      font-size: 14px;
+      letter-spacing: 0.05em;
+    }
+    .dialog-footer {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+    }
+    .btn-secondary {
+      font-size: 12px;
+      font-family: Georgia, serif;
+      padding: 8px 16px;
+      border: 1px solid #bbb;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      color: #666;
+      transition: background 0.15s;
+    }
+    .btn-secondary:hover {
+      background: #f0f0f0;
+    }
   </style>
 </head>
 <body>
@@ -90,6 +193,30 @@
   <div id="game-over-banner"></div>
 </div>
 
+<!-- Game Mode Selection Dialog -->
+<div id="game-mode-overlay" class="game-mode-overlay hidden">
+  <div class="game-mode-dialog">
+    <h2>New Game</h2>
+    <p>Select a game mode:</p>
+    
+    <div class="mode-options">
+      <button class="mode-btn" id="mode-human" data-mode="human">
+        <span class="mode-icon">👥</span>
+        <span class="mode-label">2 Human Players</span>
+      </button>
+      
+      <button class="mode-btn" id="mode-ai" data-mode="ai">
+        <span class="mode-icon">🤖</span>
+        <span class="mode-label">vs AI Opponent</span>
+      </button>
+    </div>
+    
+    <div class="dialog-footer">
+      <button id="cancel-game-mode" class="btn-secondary">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <script>
 (function(){
   const svg=document.getElementById('board-svg');
@@ -100,12 +227,61 @@
   const skipBtn=document.getElementById('skip-btn');
   const gameOverBanner=document.getElementById('game-over-banner');
   const W=640,H=560;
-  let currentPlayer=1,gameOver=false;
+  let currentPlayer=1,gameOver=false,gameMode='human';
   const P_COLOR={1:'#2A5298',2:'#8B2020'};
   const P_STROKE={1:'#1a3a75',2:'#5c1111'};
 
-  // Board: 7 rows, widths 6,7,8,9,8,7,6 — total 51 cells
-  // [r, q_min, q_max]
+  // ===== GAME MODE DIALOG =====
+  class GameModeDialog {
+    constructor() {
+      this.overlay = document.getElementById('game-mode-overlay');
+      this.modeButtons = document.querySelectorAll('.mode-btn');
+      this.cancelBtn = document.getElementById('cancel-game-mode');
+      this.selectedMode = null;
+      this.setupEventListeners();
+    }
+    
+    setupEventListeners() {
+      this.modeButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => this.selectMode(e.target.closest('.mode-btn')));
+      });
+      this.cancelBtn.addEventListener('click', () => this.close());
+    }
+    
+    selectMode(button) {
+      this.modeButtons.forEach(btn => btn.classList.remove('selected'));
+      button.classList.add('selected');
+      this.selectedMode = button.dataset.mode;
+      setTimeout(() => this.confirm(), 500);
+    }
+    
+    show() {
+      this.overlay.classList.remove('hidden');
+      this.selectedMode = null;
+      this.modeButtons.forEach(btn => btn.classList.remove('selected'));
+    }
+    
+    close() {
+      this.overlay.classList.add('hidden');
+      this.selectedMode = null;
+    }
+    
+    confirm() {
+      if (this.selectedMode) {
+        gameMode = this.selectedMode;
+        this.close();
+        resetGame();
+      }
+    }
+    
+    getSelectedMode() {
+      return this.selectedMode;
+    }
+  }
+
+  const gameModeDialog = new GameModeDialog();
+
+  // ===== GAME BOARD SETUP =====
   const ROW_DEFS=[
     [-3,  0,  5],
     [-2, -1,  5],
@@ -290,12 +466,21 @@
       statusEl.textContent='invalid \u2014 select a piece or valid destination';
     }else{if(cell.piece)selectPiece(key);}
   }
-  initPieces();
-  document.getElementById('reset-btn').addEventListener('click',()=>{
+  
+  function resetGame(){
     clearHighlights();selected=null;selectedMoves=[];selectedRetreats=[];selectedTargets=[];selectedIsBallista=false;currentPlayer=1;gameOver=false;gameOverBanner.style.display='none';gameOverBanner.className='';skipBtn.style.display='none';
     Object.values(cellMap).forEach(c=>{c.el.classList.remove('in-check');if(c.piece){c.piece.shapeEl.remove();c.piece=null;}});captureLog.textContent='';indP1.className='turn-indicator active-p1';indP2.className='turn-indicator';
     initPieces();statusEl.textContent='player 1\'s turn \u2014 select a piece';
+  }
+
+  initPieces();
+  
+  document.getElementById('reset-btn').addEventListener('click',()=>{
+    gameModeDialog.show();
   });
+
+  // Show game mode dialog on page load
+  gameModeDialog.show();
 })();
 </script>
 </body>
